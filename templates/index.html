@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>GPS Data – Filtrování</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    /* Overlay panel s filtry přímo nad mapou */
+    .filter-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 1000;
+      max-width: 320px;
+      font-family: sans-serif;
+      font-size: 14px;
+    }
+    .filter-overlay h2 {
+      font-size: 16px;
+      margin-top: 0;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .filter-section {
+      margin-bottom: 10px;
+    }
+    .filter-section > label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    .checkbox-group label {
+      display: inline-block;
+      margin-right: 10px;
+      margin-bottom: 5px;
+    }
+    /* Zarovnání checkboxů pro měsíce do dvou sloupců */
+    #monthCheckboxes {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    #monthCheckboxes label {
+      width: 45%;
+      margin-bottom: 5px;
+    }
+    .radio-group label {
+      display: inline-block;
+      margin-right: 10px;
+    }
+    button {
+      padding: 5px 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    /* Legenda teplotní mapy */
+    .heatmap-legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(255,255,255,0.9);
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      z-index: 1000;
+    }
+    .heatmap-legend span {
+      display: inline-block;
+      width: 20px;
+      height: 10px;
+      margin-right: 5px;
+    }
+     /* Zmenšení písma u checkboxů pro kategorie */
+    #categoryCheckboxes label {
+      font-size: 10px;
+    }  
+    #categoryCheckboxes {
+      display: flex;
+      flex-wrap: wrap;
+    }
+    #monthCheckboxes {
+    display: flex;
+    flex-wrap: wrap;
+    }
+
+    #monthCheckboxes label {
+    flex: 1 1 30%; /* Každý label zabere cca 30% šířky, což umožní 3 sloupce */
+    margin-bottom: 5px;
+    }
+
+    #categoryCheckboxes label {
+      flex: 1 1 30%; /* Každý label bude mít přibližně 45% šířky, takže se vytvoří dva sloupce */
+      margin-bottom: 5px;
+    }
+    #helpTreeview {
+    max-height: 150px;  /* pevná výška, upravte dle potřeby */
+    overflow-y: auto;   /* vertikální rolování */
+    }
+  </style>
+</head>
+<body>
+  <!-- Mapa -->
+  <div id="map"></div>
+  
+  <!-- Overlay panel s filtry -->
+  <div class="filter-overlay">
+    <h2>Vybrané události Městské policie</h2>
+    <h2>Mladá Boleslav</h2>
+    <!-- Volba režimu zobrazení -->
+    <div class="filter-section" id="displayModeSection">
+      <label>Zobrazit:</label>
+      <div class="radio-group">
+        <label><input type="radio" name="displayMode" value="body" checked> Body</label>
+        <label><input type="radio" name="displayMode" value="heatmap"> Teplotní mapa</label>
+      </div>
+    </div>
+    <!-- Filtr pro rok -->
+    <div class="filter-section" id="yearSection">
+      <label>Rok</label>
+      <div class="checkbox-group" id="yearCheckboxes">
+        <!-- Dynamicky generované checkboxy pro rok -->
+      </div>
+    </div>
+    <!-- Filtr pro měsíc -->
+    <div class="filter-section" id="monthSection">
+      <label>Měsíc</label>
+      <div class="checkbox-group" id="monthCheckboxes">
+        <label><input type="checkbox" value="01"> Leden</label>
+        <label><input type="checkbox" value="02"> Únor</label>
+        <label><input type="checkbox" value="03"> Březen</label>
+        <label><input type="checkbox" value="04"> Duben</label>
+        <label><input type="checkbox" value="05"> Květen</label>
+        <label><input type="checkbox" value="06"> Červen</label>
+        <label><input type="checkbox" value="07"> Červenec</label>
+        <label><input type="checkbox" value="08"> Srpen</label>
+        <label><input type="checkbox" value="09"> Září</label>
+        <label><input type="checkbox" value="10"> Říjen</label>
+        <label><input type="checkbox" value="11"> Listopad</label>
+        <label><input type="checkbox" value="12"> Prosinec</label>
+      </div>
+    </div>
+    <!-- Filtr pro kategorii -->
+    <div class="filter-section" id="categorySection">
+      <label>Kategorie</label>
+      <div class="checkbox-group" id="categoryCheckboxes">
+        <!-- Dynamicky generované checkboxy pro kategorii -->
+      </div>
+    </div>
+    <div style="display: flex; justify-content: space-between; margin-top: 10px;"></div>
+
+    <button id="showButton">Zobrazit</button>
+    <button id="helpButton">Nápověda</button>
+    <!-- Skrytý Treeview pro nápovědu -->
+    <div id="helpTreeview" style="display: none; margin-top: 10px; border: 1px solid #ccc; padding: 5px;">
+      <strong>Nápověda</strong>
+      <ul>
+        <br>Zobrazit jdou jen vybrané události. Seznam nepředstavuje kompletní činnost městské policie.</br>
+        <br><b>UPOZORNĚNÍ</b>poklud zobrazíte body a nevyberete žádnoukategorii načítání dat bude pomalé protože se  musí zobrazit pes 10.000 událostí. </br>
+        <br></br>
+        <P><b>KATEGORIE</b></P>
+        <li><b>Parkování</b>🅿️-Přestupky Zastavení a stání </li>
+        <li><b>Noční klid</b>🔕- Přestupky porušení Nočního klidu </li> 
+        <li><b>Chodec</b>🚶-Přestupky Chodců </li> 
+        <li><b>>Krádež</b>💰-Přestupky Ddrobná krádež </li> 
+        <li><b>Trestný čin</b>🚨-Podezření z trestného činu </li> 
+        <li><b>KO</b>🔎-Kontrola osoby </li> 
+        <li><b>První pomoc</b>🚑-Poskytnutí první pomoci </li>
+        <li><b>Ostatní z.</b>❓-Ostatní závady </li>
+        <li><b>Zeleň</b>🌳-Závada na zeleni </li> 
+        <li><b>Ostatní OZV</b>🏛️-Ostatní přestupky OZV (Obecně závazné vyhlášky nař. žebrání, podomní prodej atd.) </li> 
+        <li><b>Ostatní</b>❗-Ostatní přestupky (např.:Občanské soužití,pytláctví atd.) </li> 
+        <li><b>Alkohol</b>🍺- Přestupky pitá lakoholu na veřejnosti </li>
+        <li><b>Cyklista</b>🚴- Přestupky cyklistů a koloběžek</li> 
+        <li><b>Kadavér</b>💀- Sběr kadaverů (mrtvá zvířata)</li> 
+        <li><b>Čistota</b>🗑️- Závada Nepořádek </li>
+        <li><b>Osvětlení</b>💡- Závada na Osvětlení </li>
+        <li><b>Veř. pořádek</b>👮- Přestupky Veřejného pořádku nař. zábor, neuposlechnutí výzvy, znečištění v.p., atd. </li>
+        <li><b>Ostatní DP</b>👮- Přestupky Veřejného pořádku nař. zábor, neuposlechnutí výzvy, znečištění v.p., atd. </li>
+        <li><b>Kouření</b>🚭- Přestupky zákaz koužení na místěchzakázaných např. autobusové zastávky</li>
+        <li><b>Odchyt</b>🐕- Odchyt zvířete, nejčastěji pas, ale i had atd..</li>
+        <li><b>Pomoc</b>🤝- Pomoc občanům např. zabouchnuté dveře, nastartování vozu atd.</li>
+        <li><b>Značení</b>🚸- Závada na dopravním zančení. např.vylomené, zakrytá, chybějící dopravní značka</li>
+        <li><b>Vybavení</b>🪑- Závada na občanském vybavení. např.pošklozená, lavička, odpadkový koš atd.</li>
+
+      </ul>
+    </div>
+  </div>
+  
+  <!-- Legenda teplotní mapy -->
+  <div class="heatmap-legend" id="heatmapLegend" style="display:none;"></div>
+  
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script>
+    // Inicializace mapy, centrum Mladá Boleslav
+    var map = L.map('map').setView([50.4147, 14.9272], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: 'Map data © OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Vrstvy pro body a heatmapu
+    var markersLayer = L.layerGroup().addTo(map);
+    var heatLayer = null;
+    
+    // Globální proměnná pro aktuální heatData
+    var currentHeatData = [];
+    
+    // Funkce pro načtení filtrů a vytvoření checkboxů pro roky a kategorie
+    function loadFilters() {
+      fetch('/api/filters')
+        .then(response => response.json())
+        .then(data => {
+          var years = new Set();
+          var categories = new Map();
+          data.forEach(item => {
+            years.add(item.year);
+            if (!categories.has(item.kategorie)) {
+              categories.set(item.kategorie, item.symbol);
+            }
+          });
+           // Defaultně vybrané kategorie (přesné názvy, jak jsou vraceny z API) může jich tam být víc
+          var defaultCategories = ["První pomoc"];
+
+          var yearContainer = document.getElementById("yearCheckboxes");
+          years.forEach(year => {
+            var label = document.createElement("label");
+            var checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = year;
+            // Můžete případně nastavit defaultní rok, např. aktuální rok:
+            // if (year === "2023") { checkbox.checked = true; }
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(" " + year));
+            yearContainer.appendChild(label);
+          });
+          // Definice defaultně vybraných kategorií (použijte přesné názvy, jak jsou vraceny z API)
+          var defaultCategories = ["První pomoc"];
+
+          var categoryContainer = document.getElementById("categoryCheckboxes");
+          categories.forEach((symbol, cat) => {
+            var label = document.createElement("label");
+            var checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.value = cat;
+            checkbox.setAttribute("data-symbol", symbol);
+            // Pokud je kategorie mezi defaultně vybranými, nastavíme checkbox jako zaškrtnutý
+            if (defaultCategories.includes(cat)) {
+              checkbox.checked = true;
+            }
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(" " + cat + " " + symbol));
+            categoryContainer.appendChild(label);
+          });
+          // Po načtení filtrů automaticky zavoláme loadData, aby se zobrazily defaultní položky
+          loadData();
+        });
+    }
+    
+    // Funkce aktualizuje legendu teplotní mapy podle aktuálních dat a zorného pole
+    function updateLegend() {
+      if (!heatLayer || currentHeatData.length === 0) return;
+      var bounds = map.getBounds();
+      var visibleCount = currentHeatData.filter(function(pt) {
+        return bounds.contains(L.latLng(pt[0], pt[1]));
+      }).length;
+      document.getElementById("heatmapLegend").innerHTML =
+        `<strong>Viditelné případy</strong><br>${visibleCount} (Celkem: ${currentHeatData.length})`;
+    }
+    
+    // Funkce načte data podle vybraných filtrů
+    function loadData() {
+      var displayMode = document.querySelector("input[name='displayMode']:checked").value;
+      
+      var selectedYears = [];
+      document.querySelectorAll("#yearCheckboxes input[type='checkbox']:checked")
+        .forEach(cb => selectedYears.push(cb.value));
+      
+      var selectedMonths = [];
+      document.querySelectorAll("#monthCheckboxes input[type='checkbox']:checked")
+        .forEach(cb => selectedMonths.push(cb.value));
+      
+      var selectedCategories = [];
+      document.querySelectorAll("#categoryCheckboxes input[type='checkbox']:checked")
+        .forEach(cb => selectedCategories.push(cb.value));
+      
+      var queryParams = [];
+      if (selectedYears.length > 0) {
+        queryParams.push("year=" + encodeURIComponent(selectedYears.join(",")));
+      }
+      if (selectedMonths.length > 0) {
+        queryParams.push("month=" + encodeURIComponent(selectedMonths.join(",")));
+      }
+      if (selectedCategories.length > 0) {
+        queryParams.push("kategorie=" + encodeURIComponent(selectedCategories.join(",")));
+      }
+      var queryString = queryParams.join("&");
+      
+      fetch("/api/data?" + queryString)
+        .then(response => response.json())
+        .then(data => {
+          // Vyčištění vrstev
+          markersLayer.clearLayers();
+          if (heatLayer) {
+            map.removeLayer(heatLayer);
+            heatLayer = null;
+          }
+          
+          // Režim "Body"
+          if (displayMode === "body") {
+            document.getElementById("heatmapLegend").style.display = "none";
+            data.forEach(item => {
+              var icon = L.divIcon({
+                html: `<span style="font-size:16px;">${item.symbol}</span>`,
+                className: ""
+              });
+              var marker = L.marker([item.sirka, item.delka], {icon: icon})
+                .bindPopup(`Datum: ${item.datum}<br>Kategorie: ${item.kategorie}`);
+              markersLayer.addLayer(marker);
+            });
+          }
+          // Režim "Teplotní mapa"
+          else if (displayMode === "heatmap") {
+            if (selectedCategories.length !== 1) {
+              alert("Pro teplotní mapu vyberte prosím právě 1 kategorii.");
+              return;
+            }
+            document.getElementById("heatmapLegend").style.display = "block";
+            
+            // Vytvoříme heatData: každý záznam má intenzitu 1
+            currentHeatData = data.map(item => [item.sirka, item.delka, 1]);
+            var totalCount = currentHeatData.length;
+            
+            heatLayer = L.heatLayer(currentHeatData, {
+              radius: 25,
+              blur: 15,
+              maxZoom: 17,
+              gradient: {0.0: 'green', 1.0: 'red'}
+            }).addTo(map);
+            
+            // Aktualizujeme legendu
+            updateLegend();
+          }
+        });
+    }
+    
+    // Aktualizace legendy při každé změně zorného pole mapy (zoom/pan)
+    map.on("moveend", function() {
+      updateLegend();
+    });
+    
+    document.getElementById("showButton").addEventListener("click", loadData);
+    
+    // Inicializace filtrů při načtení stránky
+    loadFilters();
+
+    // Přidání posluchače události pro tlačítko Nápověda
+    document.getElementById("helpButton").addEventListener("click", function() {
+        var helpDiv = document.getElementById("helpTreeview");
+          if (helpDiv.style.display === "none") {
+                helpDiv.style.display = "block";
+          } else {
+            helpDiv.style.display = "none";
+          }
+});
+
+  </script>
+</body>
+</html>
